@@ -1,6 +1,9 @@
 .gradle
 build
+bin/
+restart-runelite.ps1
 .idea/
+.vscode/
 .project
 .settings/
 .classpath
