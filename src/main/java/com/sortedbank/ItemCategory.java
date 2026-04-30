@@ -23,6 +23,15 @@ public enum ItemCategory
 	LOG(16, "Logs"),
 	ORE(17, "Ores & Bars"),
 	GEM(18, "Gems"),
+	KEY(19, "Keys"),
+	QUEST_ITEM(20, "Quest & Lore"),
+	PRAYER_ITEM(21, "Prayer Items"),
+	FLETCHING_COMPONENT(22, "Fletching Components"),
+	PROCESSED_MATERIAL(23, "Processed Materials"),
+	JEWELRY(24, "Jewelry"),
+	CONSTRUCTION(25, "Construction"),
+	CONTAINER(26, "Containers"),
+	COLLECTIBLE(27, "Collectibles"),
 	MISC(99, "Miscellaneous");
 
 	private final int sortOrder;

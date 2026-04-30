@@ -176,7 +176,7 @@ public class SortedBankPlugin extends Plugin
 			int itemId = child.getItemId();
 			if (itemId > 0)
 			{
-				realItems.add(new BankItem(child, itemId, child.getItemQuantity(), false));
+				realItems.add(new BankItem(child, canonicalizeItemId(itemId), child.getItemQuantity(), false));
 			}
 			else
 			{
@@ -543,6 +543,11 @@ public class SortedBankPlugin extends Plugin
 			return;
 		}
 
+		if (!sortedTabWidgets.isEmpty() && sortedTabWidgets.get(0).getParent() != bankContainer)
+		{
+			sortedTabWidgets.clear();
+		}
+
 		while (sortedTabWidgets.size() < SORTED_TABS.length)
 		{
 			Widget tab = bankContainer.createChild(-1, WidgetType.TEXT);
@@ -673,7 +678,7 @@ public class SortedBankPlugin extends Plugin
 			}
 			for (Widget child : arr)
 			{
-				if (child == null)
+				if (child == null || sortedTabWidgets.contains(child))
 				{
 					continue;
 				}
@@ -912,12 +917,13 @@ public class SortedBankPlugin extends Plugin
 
 	private String getItemName(int itemId)
 	{
-		ItemComposition comp = itemManager.getItemComposition(itemId);
+		ItemComposition comp = itemManager.getItemComposition(canonicalizeItemId(itemId));
 		return comp != null ? comp.getName() : "";
 	}
 
 	private long getItemPrice(int itemId)
 	{
+		itemId = canonicalizeItemId(itemId);
 		if (config.priceSource() == PriceSource.HIGH_ALCH)
 		{
 			ItemComposition comp = itemManager.getItemComposition(itemId);
@@ -928,8 +934,20 @@ public class SortedBankPlugin extends Plugin
 
 	private ItemCategory getCategory(int itemId)
 	{
+		itemId = canonicalizeItemId(itemId);
+		ItemCategory mappedCategory = ItemCategoryMap.get(itemId);
+		if (mappedCategory != null)
+		{
+			return mappedCategory;
+		}
+
 		ItemComposition comp = itemManager.getItemComposition(itemId);
 		return ItemCategory.categorize(comp);
+	}
+
+	private int canonicalizeItemId(int itemId)
+	{
+		return itemManager.canonicalize(itemId);
 	}
 
 	private void restoreBank()
@@ -1033,7 +1051,11 @@ public class SortedBankPlugin extends Plugin
 						|| category == ItemCategory.HERB
 						|| category == ItemCategory.LOG
 						|| category == ItemCategory.ORE
-						|| category == ItemCategory.GEM;
+						|| category == ItemCategory.GEM
+						|| category == ItemCategory.PRAYER_ITEM
+						|| category == ItemCategory.FLETCHING_COMPONENT
+						|| category == ItemCategory.PROCESSED_MATERIAL
+						|| category == ItemCategory.CONSTRUCTION;
 				case MELEE_BIS:
 				case RANGED_BIS:
 				case MAGE_BIS:
