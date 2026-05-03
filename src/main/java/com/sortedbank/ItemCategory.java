@@ -66,8 +66,12 @@ public enum ItemCategory
 			return MISC;
 		}
 
-		String name = comp.getName().toLowerCase();
-		String[] actions = comp.getInventoryActions();
+		return categorize(comp.getName(), comp.getInventoryActions());
+	}
+
+	static ItemCategory categorize(String itemName, String[] actions)
+	{
+		String name = itemName.toLowerCase();
 		boolean isEquippable = hasAction(actions, "Wield") || hasAction(actions, "Wear") || hasAction(actions, "Equip");
 
 		if (name.equals("coins") || name.equals("platinum token"))
@@ -81,9 +85,17 @@ public enum ItemCategory
 			return RUNE;
 		}
 
+		// Fletching components
+		if (name.equals("feather") || name.equals("arrow shaft") || name.equals("headless arrow")
+			|| name.endsWith(" arrowtips") || name.endsWith(" bolt tips") || name.contains("unfinished bolts"))
+		{
+			return FLETCHING_COMPONENT;
+		}
+
 		// Ammunition
 		if (name.contains("arrow") || name.contains("bolt") || name.contains("dart")
-			|| name.contains(" knives") || name.endsWith(" knife(p)")
+			|| name.contains(" knives") || name.endsWith(" knife") && !name.equals("knife") && isEquippable
+			|| name.endsWith(" knife(p)")
 			|| name.endsWith(" knife(p+)") || name.endsWith(" knife(p++)")
 			|| name.contains("javelin") || name.contains("thrownaxe"))
 		{
@@ -103,6 +115,13 @@ public enum ItemCategory
 		if (hasAction(actions, "Eat"))
 		{
 			return FOOD;
+		}
+
+		// Prayer
+		if (name.equals("bones") || name.endsWith(" bones") || name.contains("bonemeal")
+			|| name.endsWith(" ashes") || name.equals("ashes"))
+		{
+			return PRAYER_ITEM;
 		}
 
 		// Seeds
@@ -131,11 +150,28 @@ public enum ItemCategory
 			return ORE;
 		}
 
+		// Containers
+		if (name.equals("vial") || name.equals("vial of water") || name.equals("bucket")
+			|| name.equals("bucket of water") || name.equals("jug") || name.equals("jug of water")
+			|| name.equals("pot") || name.equals("bowl") || name.equals("empty sack"))
+		{
+			return CONTAINER;
+		}
+
+		// Processed materials
+		if (name.endsWith(" leather") || name.equals("leather") || name.endsWith(" plank")
+			|| name.endsWith(" planks") || name.endsWith(" cloth") || name.equals("wool")
+			|| name.endsWith(" nails"))
+		{
+			return PROCESSED_MATERIAL;
+		}
+
 		// Gems
-		if (name.contains("sapphire") || name.contains("emerald") || name.contains("ruby")
-			|| name.contains("diamond") || name.contains("dragonstone") || name.contains("onyx")
-			|| name.contains("zenyte") || name.contains("opal") || name.contains("jade")
-			|| name.contains("topaz"))
+		if (!isJewelryName(name)
+			&& (name.contains("sapphire") || name.contains("emerald") || name.contains("ruby")
+				|| name.contains("diamond") || name.contains("dragonstone") || name.contains("onyx")
+				|| name.contains("zenyte") || name.contains("opal") || name.contains("jade")
+				|| name.contains("topaz")))
 		{
 			return GEM;
 		}
@@ -150,11 +186,18 @@ public enum ItemCategory
 			return TELEPORT;
 		}
 
+		// Jewelry
+		if (isJewelryName(name))
+		{
+			return JEWELRY;
+		}
+
 		// Tools & Skilling
 		if (name.contains("pickaxe") || name.contains("axe") && !name.contains("battleaxe")
 			|| name.contains("harpoon") || name.contains("hammer") || name.contains("chisel")
 			|| name.contains("tinderbox") || name.contains("knife") && !isEquippable
 			|| name.contains("needle") || name.contains("fishing rod") || name.contains("net")
+			|| name.contains("fishing bait")
 			|| name.contains("spade") || name.contains("rake") || name.contains("seed dibber")
 			|| name.contains("secateurs") || name.contains("watering can"))
 		{
@@ -204,6 +247,12 @@ public enum ItemCategory
 			|| name.contains("sceptre") || name.contains("scepter") || name.contains("kodai")
 			|| name.contains("harmonised nightmare staff") || name.contains("volatile nightmare staff")
 			|| name.contains("eldritch nightmare staff");
+	}
+
+	private static boolean isJewelryName(String name)
+	{
+		return name.contains("ring") || name.contains("amulet") || name.contains("necklace")
+			|| name.contains("bracelet") || name.contains("signet");
 	}
 
 	private static boolean isRangedWeapon(String name)

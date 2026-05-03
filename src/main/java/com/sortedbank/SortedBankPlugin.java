@@ -26,6 +26,7 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ScriptPostFired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,6 +74,7 @@ public class SortedBankPlugin extends Plugin
 	private SortedTab selectedTab = SortedTab.ALL;
 	private boolean sortedBankEnabled = true;
 	private boolean sortedLayoutApplied;
+	private boolean lastUiVisible;
 
 	@Inject
 	private Client client;
@@ -115,6 +117,8 @@ public class SortedBankPlugin extends Plugin
 	{
 		if (event.getScriptId() == ScriptID.BANKMAIN_BUILD)
 		{
+			log.debug("BANKMAIN_BUILD fired: sortedBankEnabled={}, selectedTab={}, sortedLayoutApplied={}",
+				sortedBankEnabled, selectedTab, sortedLayoutApplied);
 			addOrUpdateToggleButton();
 			if (!sortedBankEnabled)
 			{
@@ -135,6 +139,28 @@ public class SortedBankPlugin extends Plugin
 		clientThread.invokeLater(this::sortBank);
 	}
 
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		if (client.getWidget(ComponentID.BANK_CONTAINER) == null)
+		{
+			if (lastUiVisible)
+			{
+				log.debug("Bank closed; managed UI no longer visible");
+				lastUiVisible = false;
+			}
+			return;
+		}
+
+		addOrUpdateToggleButton();
+		if (sortedBankEnabled && client.getWidget(ComponentID.BANK_ITEM_CONTAINER) != null)
+		{
+			hideBankTabStrip();
+			addOrUpdateSortedTabs();
+		}
+		logUiState("game tick");
+	}
+
 	private void sortBank()
 	{
 		addOrUpdateToggleButton();
@@ -142,6 +168,8 @@ public class SortedBankPlugin extends Plugin
 		Widget bankContainer = client.getWidget(ComponentID.BANK_ITEM_CONTAINER);
 		if (bankContainer == null || bankContainer.getDynamicChildren() == null)
 		{
+			log.debug("sortBank skipped: itemContainer={}, dynamicChildren={}", bankContainer,
+				bankContainer == null ? null : bankContainer.getDynamicChildren());
 			return;
 		}
 
@@ -167,6 +195,7 @@ public class SortedBankPlugin extends Plugin
 
 		hideBankTabStrip();
 		addOrUpdateSortedTabs();
+		logUiState("sortBank");
 
 		List<BankItem> realItems = new ArrayList<>();
 		List<Widget> emptySlots = new ArrayList<>();
@@ -244,6 +273,12 @@ public class SortedBankPlugin extends Plugin
 
 		for (BankItem item : items)
 		{
+			if (tab == SortedTab.MAGE_BIS && getCategory(item.itemId) == ItemCategory.RUNE)
+			{
+				bestItemIdsBySlot.computeIfAbsent(-2, ignored -> new HashSet<>()).add(item.itemId);
+				continue;
+			}
+
 			if (tab == SortedTab.MAGE_BIS && isStaff(item.itemId))
 			{
 				bestItemIdsBySlot.computeIfAbsent(-1, ignored -> new HashSet<>()).add(item.itemId);
@@ -315,12 +350,25 @@ public class SortedBankPlugin extends Plugin
 		Widget bankContainer = client.getWidget(ComponentID.BANK_CONTAINER);
 		if (bankContainer == null)
 		{
+			if (toggleButton != null)
+			{
+				log.debug("Dropping toggleButton reference because BANK_CONTAINER is null");
+			}
 			toggleButton = null;
 			return;
 		}
 
+		if (toggleButton != null && !isChildOf(bankContainer, toggleButton))
+		{
+			log.info("Recreating detached toggleButton: existing={}, parent={}, bankContainer={}",
+				toggleButton, toggleButton.getParent(), bankContainer);
+			toggleButton = null;
+		}
+
 		if (toggleButton == null || toggleButton.getParent() != bankContainer)
 		{
+			log.debug("Creating toggleButton: existing={}, existingParent={}, bankContainer={}",
+				toggleButton, toggleButton == null ? null : toggleButton.getParent(), bankContainer);
 			toggleButton = bankContainer.createChild(-1, WidgetType.TEXT);
 			toggleButton.setTextColor(HEADER_TEXT_COLOR);
 			toggleButton.setTextShadowed(true);
@@ -539,18 +587,28 @@ public class SortedBankPlugin extends Plugin
 		Widget tabContainer = client.getWidget(ComponentID.BANK_TAB_CONTAINER);
 		if (bankContainer == null || tabContainer == null)
 		{
+			if (!sortedTabWidgets.isEmpty())
+			{
+				log.debug("Clearing sortedTabWidgets because containers missing: bankContainer={}, tabContainer={}",
+					bankContainer, tabContainer);
+			}
 			sortedTabWidgets.clear();
 			return;
 		}
 
-		if (!sortedTabWidgets.isEmpty() && sortedTabWidgets.get(0).getParent() != bankContainer)
+		if (!sortedTabWidgets.isEmpty()
+			&& (sortedTabWidgets.get(0).getParent() != bankContainer || !allChildrenOf(bankContainer, sortedTabWidgets)))
 		{
+			log.info("Clearing stale sortedTabWidgets: firstParent={}, attachedTabs={}/{}, bankContainer={}",
+				sortedTabWidgets.get(0).getParent(), countAttachedChildren(bankContainer, sortedTabWidgets),
+				sortedTabWidgets.size(), bankContainer);
 			sortedTabWidgets.clear();
 		}
 
 		while (sortedTabWidgets.size() < SORTED_TABS.length)
 		{
 			Widget tab = bankContainer.createChild(-1, WidgetType.TEXT);
+			log.debug("Creating sorted tab widget index={} parent={}", sortedTabWidgets.size(), bankContainer);
 			tab.setTextShadowed(true);
 			tab.setFontId(495);
 			tab.setHasListener(true);
@@ -597,6 +655,7 @@ public class SortedBankPlugin extends Plugin
 		Widget tabContainer = client.getWidget(ComponentID.BANK_TAB_CONTAINER);
 		if (tabContainer != null && !tabContainer.isSelfHidden())
 		{
+			log.debug("Hiding native bank tab container");
 			tabContainer.setHidden(true);
 		}
 		setTagTabsHidden(true);
@@ -678,7 +737,7 @@ public class SortedBankPlugin extends Plugin
 			}
 			for (Widget child : arr)
 			{
-				if (child == null || sortedTabWidgets.contains(child))
+				if (child == null || child == toggleButton || sortedTabWidgets.contains(child))
 				{
 					continue;
 				}
@@ -690,6 +749,8 @@ public class SortedBankPlugin extends Plugin
 				{
 					if (child.isSelfHidden() != hidden)
 					{
+						log.debug("{} possible tag-tab widget: widget={}, x={}, y={}, w={}",
+							hidden ? "Hiding" : "Showing", child, x, y, w);
 						child.setHidden(hidden);
 					}
 				}
@@ -935,12 +996,6 @@ public class SortedBankPlugin extends Plugin
 	private ItemCategory getCategory(int itemId)
 	{
 		itemId = canonicalizeItemId(itemId);
-		ItemCategory mappedCategory = ItemCategoryMap.get(itemId);
-		if (mappedCategory != null)
-		{
-			return mappedCategory;
-		}
-
 		ItemComposition comp = itemManager.getItemComposition(itemId);
 		return ItemCategory.categorize(comp);
 	}
@@ -1107,6 +1162,84 @@ public class SortedBankPlugin extends Plugin
 				+ equipment.getDmagic()
 				+ equipment.getDrange();
 		}
+	}
+
+	private void logUiState(String source)
+	{
+		if (!log.isDebugEnabled())
+		{
+			return;
+		}
+
+		boolean toggleVisible = toggleButton != null && !toggleButton.isSelfHidden();
+		Widget bankContainer = client.getWidget(ComponentID.BANK_CONTAINER);
+		boolean toggleAttached = bankContainer != null && toggleButton != null && isChildOf(bankContainer, toggleButton);
+		int visibleTabs = 0;
+		int attachedTabs = bankContainer == null ? 0 : countAttachedChildren(bankContainer, sortedTabWidgets);
+		for (Widget tab : sortedTabWidgets)
+		{
+			if (tab != null && !tab.isSelfHidden())
+			{
+				visibleTabs++;
+			}
+		}
+
+		boolean uiVisible = toggleVisible || visibleTabs > 0;
+		if (uiVisible != lastUiVisible || !toggleVisible || visibleTabs != SORTED_TABS.length
+			|| !toggleAttached || attachedTabs != SORTED_TABS.length)
+		{
+			log.debug("Managed bank UI state after {}: toggle={} toggleAttached={} toggleParent={} tabs={}/{} attachedTabs={}/{} selectedTab={} sortedEnabled={}",
+				source, toggleVisible, toggleAttached, toggleButton == null ? null : toggleButton.getParent(),
+				visibleTabs, SORTED_TABS.length, attachedTabs, SORTED_TABS.length, selectedTab, sortedBankEnabled);
+		}
+		lastUiVisible = uiVisible;
+	}
+
+	private boolean allChildrenOf(Widget parent, List<Widget> children)
+	{
+		return countAttachedChildren(parent, children) == children.size();
+	}
+
+	private int countAttachedChildren(Widget parent, List<Widget> children)
+	{
+		int count = 0;
+		for (Widget child : children)
+		{
+			if (isChildOf(parent, child))
+			{
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private boolean isChildOf(Widget parent, Widget child)
+	{
+		if (parent == null || child == null || child.getParent() != parent)
+		{
+			return false;
+		}
+
+		return containsWidget(parent.getStaticChildren(), child)
+			|| containsWidget(parent.getDynamicChildren(), child)
+			|| containsWidget(parent.getNestedChildren(), child);
+	}
+
+	private boolean containsWidget(Widget[] children, Widget widget)
+	{
+		if (children == null)
+		{
+			return false;
+		}
+
+		for (Widget child : children)
+		{
+			if (child == widget)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static class BankItem
