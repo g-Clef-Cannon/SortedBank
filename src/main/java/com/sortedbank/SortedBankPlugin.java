@@ -13,6 +13,7 @@ import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.widgets.ComponentID;
 import net.runelite.api.widgets.JavaScriptCallback;
 import net.runelite.api.widgets.Widget;
@@ -127,6 +128,11 @@ public class SortedBankPlugin extends Plugin
 			sortedLayoutApplied = false;
 			sortBank();
 		}
+		else if (event.getScriptId() == ScriptID.BANKMAIN_SEARCH_REFRESH && sortedBankEnabled)
+		{
+			sortedLayoutApplied = false;
+			clientThread.invokeLater(this::sortBank);
+		}
 	}
 
 	@Subscribe
@@ -203,15 +209,20 @@ public class SortedBankPlugin extends Plugin
 		for (Widget child : children)
 		{
 			int itemId = child.getItemId();
-			if (itemId > 0)
+			if (isRenderableBankItem(itemId))
 			{
 				realItems.add(new BankItem(child, canonicalizeItemId(itemId), child.getItemQuantity(), false));
 			}
 			else
 			{
+				if (itemId > 0)
+				{
+					resetEmptySlot(child);
+				}
 				emptySlots.add(child);
 			}
 		}
+		logBankContainerSnapshot("pre-filter", children, realItems);
 
 		if (realItems.isEmpty())
 		{
@@ -231,6 +242,7 @@ public class SortedBankPlugin extends Plugin
 		allItems.addAll(ghostItems);
 		Set<Integer> selectedItemIds = getSelectedTabItemIds(allItems);
 		allItems.removeIf(item -> !selectedItemIds.contains(item.itemId));
+		allItems.removeIf(item -> !matchesBankSearch(item.itemId));
 		hideUnselectedItems(children, allItems);
 		allItems.sort(buildComparator());
 
@@ -245,6 +257,7 @@ public class SortedBankPlugin extends Plugin
 			layoutFlat(allItems, ghostItems, children, columns, xPitch, yPitch, startX, startY);
 		}
 		sortedLayoutApplied = true;
+		logSortedBankSnapshot("post-layout", children, realItems, allItems, ghostItems);
 	}
 
 	private Set<Integer> getSelectedTabItemIds(List<BankItem> items)
@@ -273,6 +286,12 @@ public class SortedBankPlugin extends Plugin
 
 		for (BankItem item : items)
 		{
+			if (tab == SortedTab.RANGED_BIS && getCategory(item.itemId) == ItemCategory.AMMO)
+			{
+				bestItemIdsBySlot.computeIfAbsent(-5, ignored -> new HashSet<>()).add(item.itemId);
+				continue;
+			}
+
 			if (tab == SortedTab.MAGE_BIS && getCategory(item.itemId) == ItemCategory.RUNE)
 			{
 				bestItemIdsBySlot.computeIfAbsent(-2, ignored -> new HashSet<>()).add(item.itemId);
@@ -292,6 +311,11 @@ public class SortedBankPlugin extends Plugin
 			}
 
 			ItemEquipmentStats equipment = itemStats.getEquipment();
+			if (tab == SortedTab.RANGED_BIS && addRangedWeapon(item.itemId, equipment, bestScoreBySlot, bestItemIdsBySlot))
+			{
+				continue;
+			}
+
 			int score = tab.bisScore(equipment);
 			if (score <= 0)
 			{
@@ -321,10 +345,213 @@ public class SortedBankPlugin extends Plugin
 		return itemIds;
 	}
 
+	private boolean addRangedWeapon(int itemId, ItemEquipmentStats equipment, Map<Integer, Integer> bestScoreBySlot,
+		Map<Integer, Set<Integer>> bestItemIdsBySlot)
+	{
+		String name = getItemName(itemId).toLowerCase();
+		int slot = getRangedWeaponBucket(name);
+		if (slot == 0)
+		{
+			return false;
+		}
+
+		if (slot == -3)
+		{
+			bestItemIdsBySlot.computeIfAbsent(slot, ignored -> new HashSet<>()).add(itemId);
+			return true;
+		}
+
+		int score = SortedTab.RANGED_BIS.bisScore(equipment);
+		if (score <= 0)
+		{
+			return true;
+		}
+
+		int bestScore = bestScoreBySlot.getOrDefault(slot, Integer.MIN_VALUE);
+		if (score > bestScore)
+		{
+			bestScoreBySlot.put(slot, score);
+			Set<Integer> itemIds = new HashSet<>();
+			itemIds.add(itemId);
+			bestItemIdsBySlot.put(slot, itemIds);
+		}
+		else if (score == bestScore)
+		{
+			bestItemIdsBySlot.computeIfAbsent(slot, ignored -> new HashSet<>()).add(itemId);
+		}
+		return true;
+	}
+
+	private static int getRangedWeaponBucket(String name)
+	{
+		if (name.contains("crossbow"))
+		{
+			return -1;
+		}
+		if (name.contains("bow"))
+		{
+			return -2;
+		}
+		if (name.contains("blowpipe") || name.contains("ballista") || name.contains("chinchompa")
+			|| name.contains("atlatl"))
+		{
+			return -3;
+		}
+		return 0;
+	}
+
 	private boolean isStaff(int itemId)
 	{
 		String name = getItemName(itemId).toLowerCase();
 		return name.contains("staff");
+	}
+
+	private boolean isRenderableBankItem(int itemId)
+	{
+		if (itemId <= 0)
+		{
+			return false;
+		}
+
+		String itemName = getItemName(itemId);
+		return !itemName.isEmpty() && !itemName.equalsIgnoreCase("null");
+	}
+
+	private boolean matchesBankSearch(int itemId)
+	{
+		String search = getBankSearchText();
+		if (search.isEmpty())
+		{
+			return true;
+		}
+
+		return getItemName(itemId).toLowerCase().contains(search.toLowerCase());
+	}
+
+	private String getBankSearchText()
+	{
+		String search = client.getVarcStrValue(VarClientID.MESLAYERINPUT);
+		return search == null ? "" : search.trim();
+	}
+
+	private void logBankContainerSnapshot(String source, Widget[] children, List<BankItem> realItems)
+	{
+		if (!log.isDebugEnabled())
+		{
+			return;
+		}
+
+		Map<Widget, Integer> widgetSlots = indexWidgets(children);
+		log.debug("SortedBank bank snapshot {}: selectedTab={} search='{}' realItems={} children={} sortedLayoutApplied={}",
+			source, selectedTab, getBankSearchText(), realItems.size(), children.length, sortedLayoutApplied);
+		for (BankItem item : realItems)
+		{
+			Widget widget = item.widget;
+			log.debug("SortedBank bank item: slot={} widget={} itemId={} canonicalId={} name='{}' qty={} category={} hidden={} x={} y={} opacity={} ghostTracked={} headerTracked={}",
+				widgetSlots.get(widget), widgetKey(widget), widget.getItemId(), item.itemId, getItemName(item.itemId),
+				item.quantity, getCategory(item.itemId), widget.isSelfHidden(), widget.getOriginalX(),
+				widget.getOriginalY(), widget.getOpacity(), ghostWidgets.contains(widget), headerWidgets.contains(widget));
+		}
+	}
+
+	private void logSortedBankSnapshot(String source, Widget[] children, List<BankItem> realItems,
+		List<BankItem> visibleItems, List<BankItem> ghosts)
+	{
+		if (!log.isDebugEnabled())
+		{
+			return;
+		}
+
+		Map<Widget, Integer> widgetSlots = indexWidgets(children);
+		Set<Widget> visibleWidgets = new HashSet<>();
+		for (BankItem item : visibleItems)
+		{
+			visibleWidgets.add(item.widget);
+		}
+
+		boolean expectingAllRealItems = selectedTab == SortedTab.ALL && getBankSearchText().isEmpty();
+		log.debug("SortedBank sorted snapshot {}: selectedTab={} search='{}' realItems={} visibleItems={} ghosts={} children={} sortMethod={}",
+			source, selectedTab, getBankSearchText(), realItems.size(), visibleItems.size(), ghosts.size(),
+			children.length, config.sortMethod());
+
+		if (expectingAllRealItems)
+		{
+			for (BankItem item : realItems)
+			{
+				if (!visibleWidgets.contains(item.widget))
+				{
+					log.debug("SortedBank missing visible item: slot={} widget={} itemId={} canonicalId={} name='{}' qty={} category={} reason=filtered-out-on-all-tab",
+						widgetSlots.get(item.widget), widgetKey(item.widget), item.widget.getItemId(), item.itemId,
+						getItemName(item.itemId), item.quantity, getCategory(item.itemId));
+				}
+			}
+		}
+
+		for (BankItem item : visibleItems)
+		{
+			Widget widget = item.widget;
+			int widgetItemId = widget.getItemId();
+			int canonicalWidgetItemId = widgetItemId > 0 ? canonicalizeItemId(widgetItemId) : widgetItemId;
+			boolean idMismatch = widgetItemId <= 0 || canonicalWidgetItemId != item.itemId;
+			boolean quantityMismatch = !item.isGhost && widget.getItemQuantity() != item.quantity;
+			if (widget.isSelfHidden() || idMismatch || quantityMismatch)
+			{
+				log.debug("SortedBank visible item anomaly: slot={} widget={} expectedId={} expectedName='{}' expectedQty={} actualId={} actualCanonicalId={} actualName='{}' actualQty={} category={} hidden={} x={} y={} opacity={} isGhost={} ghostTracked={} headerTracked={} reason={}",
+					widgetSlots.get(widget), widgetKey(widget), item.itemId, getItemName(item.itemId), item.quantity,
+					widgetItemId, canonicalWidgetItemId, widgetItemId > 0 ? getItemName(canonicalWidgetItemId) : "",
+					widget.getItemQuantity(), getCategory(item.itemId), widget.isSelfHidden(), widget.getOriginalX(),
+					widget.getOriginalY(), widget.getOpacity(), item.isGhost, ghostWidgets.contains(widget),
+					headerWidgets.contains(widget), anomalyReason(widget, item, idMismatch, quantityMismatch));
+			}
+		}
+
+		for (Widget child : children)
+		{
+			if (child == null || child.getItemId() <= 0 && !headerWidgets.contains(child))
+			{
+				continue;
+			}
+
+			int itemId = child.getItemId();
+			int canonicalItemId = itemId > 0 ? canonicalizeItemId(itemId) : itemId;
+			log.debug("SortedBank widget item: slot={} widget={} itemId={} canonicalId={} name='{}' qty={} category={} hidden={} x={} y={} opacity={} visibleExpected={} ghostTracked={} headerTracked={} text='{}'",
+				widgetSlots.get(child), widgetKey(child), itemId, canonicalItemId, itemId > 0 ? getItemName(canonicalItemId) : "",
+				child.getItemQuantity(), itemId > 0 ? getCategory(canonicalItemId) : ItemCategory.MISC,
+				child.isSelfHidden(), child.getOriginalX(), child.getOriginalY(), child.getOpacity(),
+				visibleWidgets.contains(child), ghostWidgets.contains(child), headerWidgets.contains(child), child.getText());
+		}
+	}
+
+	private Map<Widget, Integer> indexWidgets(Widget[] children)
+	{
+		Map<Widget, Integer> widgetSlots = new HashMap<>();
+		for (int i = 0; i < children.length; i++)
+		{
+			widgetSlots.put(children[i], i);
+		}
+		return widgetSlots;
+	}
+
+	private String widgetKey(Widget widget)
+	{
+		return widget == null ? "null" : Integer.toHexString(System.identityHashCode(widget));
+	}
+
+	private String anomalyReason(Widget widget, BankItem expected, boolean idMismatch, boolean quantityMismatch)
+	{
+		if (widget.isSelfHidden())
+		{
+			return "hidden-after-layout";
+		}
+		if (idMismatch)
+		{
+			return "item-id-changed-after-layout";
+		}
+		if (quantityMismatch)
+		{
+			return expected.quantity == 0 ? "real-item-restored-as-zero-quantity" : "quantity-changed-after-layout";
+		}
+		return "unknown";
 	}
 
 	private void hideUnselectedItems(Widget[] children, List<BankItem> visibleItems)
@@ -646,7 +873,6 @@ public class SortedBankPlugin extends Plugin
 	private void selectSortedTab(SortedTab tab)
 	{
 		selectedTab = tab;
-		sortedLayoutApplied = false;
 		sortBank();
 	}
 
@@ -795,7 +1021,7 @@ public class SortedBankPlugin extends Plugin
 		for (Widget child : children)
 		{
 			activeChildren.add(child);
-			if (ghostWidgets.contains(child) && child.getItemId() > 0 && child.getItemQuantity() == 0)
+			if (ghostWidgets.contains(child) && isManagedGhostWidget(child))
 			{
 				resetEmptySlot(child);
 			}
@@ -820,14 +1046,26 @@ public class SortedBankPlugin extends Plugin
 	{
 		for (Widget child : children)
 		{
+			if (ghostWidgets.contains(child) && isManagedGhostWidget(child))
+			{
+				resetEmptySlot(child);
+			}
+			else if (headerWidgets.contains(child) && child.getItemId() <= 0)
+			{
+				resetEmptySlot(child);
+			}
+
 			WidgetState state = standardLayout.get(child);
 			if (state != null)
 			{
-				state.restore(child);
-			}
-			else if (ghostWidgets.contains(child) || headerWidgets.contains(child))
-			{
-				resetEmptySlot(child);
+				if (child.getItemId() > 0)
+				{
+					state.restoreLayoutOnly(child);
+				}
+				else
+				{
+					state.restore(child);
+				}
 			}
 			child.setDragDeadZone(0);
 			child.setDragDeadTime(0);
@@ -846,6 +1084,14 @@ public class SortedBankPlugin extends Plugin
 		{
 			standardLayout.clear();
 		}
+	}
+
+	private boolean isManagedGhostWidget(Widget widget)
+	{
+		return widget.getItemId() > 0
+			&& widget.getItemQuantity() == 0
+			&& widget.getOpacity() == GHOST_OPACITY
+			&& !widget.hasListener();
 	}
 
 	private void resetEmptySlot(Widget widget)
@@ -970,16 +1216,56 @@ public class SortedBankPlugin extends Plugin
 				return Comparator.comparingInt(item -> item.itemId);
 			case CATEGORY:
 				return Comparator.<BankItem, Integer>comparing(item -> getCategory(item.itemId).getSortOrder())
+					.thenComparing(item -> getGroupedItemName(item.itemId))
+					.thenComparingInt(item -> -getPotionDose(item.itemId))
 					.thenComparingInt(item -> item.itemId);
 			default:
 				return Comparator.comparing(item -> getItemName(item.itemId));
 		}
 	}
 
+	private String getGroupedItemName(int itemId)
+	{
+		String name = getItemName(itemId);
+		return getCategory(itemId) == ItemCategory.POTION ? stripDoseSuffix(name) : name;
+	}
+
+	private String stripDoseSuffix(String name)
+	{
+		if (name.length() < 3 || name.charAt(name.length() - 1) != ')')
+		{
+			return name;
+		}
+
+		char dose = name.charAt(name.length() - 2);
+		int openParenIndex = name.length() - 3;
+		if (openParenIndex >= 0 && name.charAt(openParenIndex) == '(' && dose >= '1' && dose <= '4')
+		{
+			return name.substring(0, openParenIndex);
+		}
+
+		return name;
+	}
+
+	private int getPotionDose(int itemId)
+	{
+		String name = getItemName(itemId);
+		if (getCategory(itemId) != ItemCategory.POTION || name.length() < 3 || name.charAt(name.length() - 1) != ')')
+		{
+			return 0;
+		}
+
+		char dose = name.charAt(name.length() - 2);
+		int openParenIndex = name.length() - 3;
+		return openParenIndex >= 0 && name.charAt(openParenIndex) == '(' && dose >= '1' && dose <= '4'
+			? dose - '0'
+			: 0;
+	}
+
 	private String getItemName(int itemId)
 	{
 		ItemComposition comp = itemManager.getItemComposition(canonicalizeItemId(itemId));
-		return comp != null ? comp.getName() : "";
+		return comp != null && comp.getName() != null ? comp.getName() : "";
 	}
 
 	private long getItemPrice(int itemId)
@@ -1015,6 +1301,7 @@ public class SortedBankPlugin extends Plugin
 
 		// Reset drag blocking, opacity, and hidden state on all children
 		restoreStandardLayout(bankContainer.getDynamicChildren(), false);
+		forceShowRealBankItems(bankContainer.getDynamicChildren());
 
 		// Restore the tab strip we hid
 		showBankTabStrip();
@@ -1028,6 +1315,21 @@ public class SortedBankPlugin extends Plugin
 
 		bankContainer.revalidate();
 		bankContainer.revalidateScroll();
+	}
+
+	private void forceShowRealBankItems(Widget[] children)
+	{
+		for (Widget child : children)
+		{
+			if (child != null && child.getItemId() > 0)
+			{
+				child.setHidden(false);
+				child.setOpacity(0);
+				child.setDragDeadZone(0);
+				child.setDragDeadTime(0);
+				child.revalidate();
+			}
+		}
 	}
 
 	private void hideSortedTabs()
@@ -1300,6 +1602,16 @@ public class SortedBankPlugin extends Plugin
 			widget.setOpacity(opacity);
 			widget.setHidden(hidden);
 			widget.setText(text);
+		}
+
+		void restoreLayoutOnly(Widget widget)
+		{
+			widget.setOriginalX(originalX);
+			widget.setOriginalY(originalY);
+			widget.setOriginalWidth(originalWidth);
+			widget.setOriginalHeight(originalHeight);
+			widget.setOpacity(opacity);
+			widget.setHidden(hidden);
 		}
 	}
 }

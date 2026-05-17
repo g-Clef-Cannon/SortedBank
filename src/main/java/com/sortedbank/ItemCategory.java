@@ -11,24 +11,24 @@ public enum ItemCategory
 	MELEE_ARMOR(4, "Melee Armor"),
 	RANGED_ARMOR(5, "Ranged Armor"),
 	MAGIC_ARMOR(6, "Magic Armor"),
-	COSMETIC(7, "Cosmetics"),
-	RUNE(8, "Runes"),
-	AMMO(9, "Ammunition"),
-	POTION(10, "Potions"),
-	FOOD(11, "Food"),
-	TELEPORT(12, "Teleportation"),
-	TOOL(13, "Tools & Skilling"),
-	SEED(14, "Seeds & Farming"),
-	HERB(15, "Herbs"),
-	LOG(16, "Logs"),
-	ORE(17, "Ores & Bars"),
-	GEM(18, "Gems"),
-	KEY(19, "Keys"),
-	QUEST_ITEM(20, "Quest & Lore"),
-	PRAYER_ITEM(21, "Prayer Items"),
-	FLETCHING_COMPONENT(22, "Fletching Components"),
-	PROCESSED_MATERIAL(23, "Processed Materials"),
-	JEWELRY(24, "Jewelry"),
+	JEWELRY(7, "Jewelry"),
+	COSMETIC(8, "Cosmetics"),
+	RUNE(9, "Runes"),
+	AMMO(10, "Ammunition"),
+	POTION(11, "Potions"),
+	FOOD(12, "Food"),
+	TELEPORT(13, "Teleportation"),
+	TOOL(14, "Tools & Skilling"),
+	SEED(15, "Seeds & Farming"),
+	HERB(16, "Herbs"),
+	LOG(17, "Logs"),
+	ORE(18, "Ores & Bars"),
+	GEM(19, "Gems"),
+	KEY(20, "Keys"),
+	QUEST_ITEM(21, "Quest & Lore"),
+	PRAYER_ITEM(22, "Prayer Items"),
+	FLETCHING_COMPONENT(23, "Fletching Components"),
+	PROCESSED_MATERIAL(24, "Processed Materials"),
 	CONSTRUCTION(25, "Construction"),
 	CONTAINER(26, "Containers"),
 	COLLECTIBLE(27, "Collectibles"),
@@ -79,6 +79,26 @@ public enum ItemCategory
 			return CURRENCY;
 		}
 
+		// Keys
+		if (name.endsWith(" key") || name.startsWith("crystal key")
+			|| name.startsWith("dark totem"))
+		{
+			return KEY;
+		}
+
+		// Quest, clues, and lore
+		if (name.startsWith("clue scroll") || name.startsWith("casket")
+			|| name.startsWith("scroll box")
+			|| name.equals("tattered page") || name.startsWith("tattered page ")
+			|| name.endsWith(" page") && (name.contains("tattered") || name.contains("ancient")
+				|| name.contains("dusty") || name.contains("damp") || name.contains("torn"))
+			|| name.endsWith(" bead")
+			|| name.contains("journal") || name.contains("diary") || name.contains("book")
+			|| name.contains("letter") || name.contains("note") && !name.contains("bank note"))
+		{
+			return QUEST_ITEM;
+		}
+
 		// Runes
 		if (name.endsWith(" rune") || name.equals("wrath rune") || name.equals("soul rune"))
 		{
@@ -87,7 +107,9 @@ public enum ItemCategory
 
 		// Fletching components
 		if (name.equals("feather") || name.equals("arrow shaft") || name.equals("headless arrow")
-			|| name.endsWith(" arrowtips") || name.endsWith(" bolt tips") || name.contains("unfinished bolts"))
+			|| name.equals("javelin shaft") || name.equals("bow string") || name.equals("bowstring")
+			|| name.endsWith(" arrowtips") || name.endsWith(" bolt tips")
+			|| name.contains("unfinished bolts") || name.endsWith(" bolts (unf)") || name.endsWith("(u)"))
 		{
 			return FLETCHING_COMPONENT;
 		}
@@ -106,35 +128,50 @@ public enum ItemCategory
 		if (name.contains("potion(") || name.contains("potion (")
 			|| name.contains("brew(") || name.contains("brew (")
 			|| name.contains("restore(") || name.contains("restore (")
-			|| name.contains("mix(") || name.contains("mix ("))
+			|| name.contains("mix(") || name.contains("mix (")
+			|| name.contains("antipoison") || name.contains("antidote")
+			|| name.startsWith("weapon poison") || isDosePotion(name))
 		{
 			return POTION;
 		}
 
 		// Food
-		if (hasAction(actions, "Eat"))
+		if (hasAction(actions, "Eat") || hasAction(actions, "Drink")
+			|| name.startsWith("raw ") && isRawFood(name)
+			|| name.equals("beer") || name.equals("dwarven stout"))
 		{
 			return FOOD;
 		}
 
 		// Prayer
 		if (name.equals("bones") || name.endsWith(" bones") || name.contains("bonemeal")
-			|| name.endsWith(" ashes") || name.equals("ashes"))
+			|| name.endsWith(" ashes") || name.equals("ashes")
+			|| name.equals("long bone") || name.equals("curved bone")
+			|| name.startsWith("ensouled ") && name.endsWith(" head")
+			|| name.equals("bird's egg"))
 		{
 			return PRAYER_ITEM;
 		}
 
 		// Seeds
 		if (name.endsWith(" seed") || name.endsWith(" seeds")
-			|| name.equals("acorn") || name.contains("sapling"))
+			|| name.equals("acorn") || name.contains("sapling")
+			|| name.endsWith(" spore"))
 		{
 			return SEED;
 		}
 
 		// Herbs
-		if (isHerb(name))
+		if (isHerb(name) || isHerbloreIngredient(name))
 		{
 			return HERB;
+		}
+
+		// Collectibles and non-coin currencies
+		if (name.equals("mark of grace") || name.equals("frog token")
+			|| name.equals("ancient shard") || name.equals("lizardman fang"))
+		{
+			return COLLECTIBLE;
 		}
 
 		// Logs
@@ -153,7 +190,8 @@ public enum ItemCategory
 		// Containers
 		if (name.equals("vial") || name.equals("vial of water") || name.equals("bucket")
 			|| name.equals("bucket of water") || name.equals("jug") || name.equals("jug of water")
-			|| name.equals("pot") || name.equals("bowl") || name.equals("empty sack"))
+			|| name.equals("pot") || name.equals("bowl") || name.equals("empty sack")
+			|| name.contains("jug pack") || name.equals("beer glass"))
 		{
 			return CONTAINER;
 		}
@@ -161,7 +199,8 @@ public enum ItemCategory
 		// Processed materials
 		if (name.endsWith(" leather") || name.equals("leather") || name.endsWith(" plank")
 			|| name.endsWith(" planks") || name.endsWith(" cloth") || name.equals("wool")
-			|| name.endsWith(" nails"))
+			|| name.endsWith(" nails") || name.endsWith("dragonhide") || name.equals("thread")
+			|| name.equals("papyrus") || name.contains("fabric") || name.endsWith(" chunk"))
 		{
 			return PROCESSED_MATERIAL;
 		}
@@ -181,7 +220,7 @@ public enum ItemCategory
 			|| name.contains("scroll of redirection") || name.equals("games necklace")
 			|| name.contains("ring of dueling") || name.contains("amulet of glory")
 			|| name.contains("skills necklace") || name.contains("combat bracelet")
-			|| name.contains("ring of wealth"))
+			|| name.contains("ring of wealth") || name.equals("xeric's talisman"))
 		{
 			return TELEPORT;
 		}
@@ -194,12 +233,13 @@ public enum ItemCategory
 
 		// Tools & Skilling
 		if (name.contains("pickaxe") || name.contains("axe") && !name.contains("battleaxe")
-			|| name.contains("harpoon") || name.contains("hammer") || name.contains("chisel")
+			|| name.contains("harpoon") || name.equals("hammer") || name.contains("chisel")
 			|| name.contains("tinderbox") || name.contains("knife") && !isEquippable
 			|| name.contains("needle") || name.contains("fishing rod") || name.contains("net")
 			|| name.contains("fishing bait")
 			|| name.contains("spade") || name.contains("rake") || name.contains("seed dibber")
-			|| name.contains("secateurs") || name.contains("watering can"))
+			|| name.contains("secateurs") || name.contains("watering can")
+			|| name.equals("dynamite") || isRunecraftingTalisman(name) || name.equals("rope"))
 		{
 			return TOOL;
 		}
@@ -251,8 +291,14 @@ public enum ItemCategory
 
 	private static boolean isJewelryName(String name)
 	{
-		return name.contains("ring") || name.contains("amulet") || name.contains("necklace")
-			|| name.contains("bracelet") || name.contains("signet");
+		return containsWord(name, "ring") || containsWord(name, "amulet") || containsWord(name, "necklace")
+			|| containsWord(name, "bracelet") || containsWord(name, "signet") || containsWord(name, "talisman")
+			&& !isRunecraftingTalisman(name);
+	}
+
+	private static boolean containsWord(String name, String word)
+	{
+		return (" " + name + " ").contains(" " + word + " ");
 	}
 
 	private static boolean isRangedWeapon(String name)
@@ -290,12 +336,73 @@ public enum ItemCategory
 			|| name.equals("torstol");
 	}
 
+	private static boolean isHerbloreIngredient(String name)
+	{
+		return name.equals("limpwurt root")
+			|| name.equals("red spiders' eggs")
+			|| name.equals("bird nest")
+			|| name.equals("crushed nest")
+			|| name.equals("snape grass")
+			|| name.equals("white berries")
+			|| name.equals("potato cactus")
+			|| name.equals("mort myre fungus")
+			|| name.equals("blue dragon scale")
+			|| name.equals("wine of zamorak");
+	}
+
+	private static boolean isRawFood(String name)
+	{
+		return name.contains("beef") || name.contains("chicken") || name.contains("rabbit")
+			|| name.contains("rat meat") || name.contains("bear meat") || name.contains("bird meat")
+			|| name.contains("shrimp") || name.contains("anchovies") || name.contains("sardine")
+			|| name.contains("herring") || name.contains("mackerel") || name.contains("trout")
+			|| name.contains("cod") || name.contains("pike") || name.contains("salmon")
+			|| name.contains("tuna") || name.contains("lobster") || name.contains("bass")
+			|| name.contains("swordfish") || name.contains("monkfish") || name.contains("shark")
+			|| name.contains("karambwan") || name.contains("anglerfish");
+	}
+
+	private static boolean isDosePotion(String name)
+	{
+		return hasDoseSuffix(name) && (name.startsWith("attack")
+			|| name.startsWith("strength")
+			|| name.startsWith("defence")
+			|| name.startsWith("super attack")
+			|| name.startsWith("super strength")
+			|| name.startsWith("super defence")
+			|| name.startsWith("ranging")
+			|| name.startsWith("magic")
+			|| name.startsWith("prayer")
+			|| name.startsWith("energy")
+			|| name.startsWith("super energy")
+			|| name.startsWith("stamina")
+			|| name.startsWith("combat")
+			|| name.startsWith("super combat")
+			|| name.startsWith("hunter")
+			|| name.startsWith("fishing")
+			|| name.startsWith("agility")
+			|| name.startsWith("antifire")
+			|| name.startsWith("super antifire")
+			|| name.startsWith("extended antifire"));
+	}
+
+	private static boolean hasDoseSuffix(String name)
+	{
+		return name.endsWith("(1)") || name.endsWith("(2)") || name.endsWith("(3)") || name.endsWith("(4)");
+	}
+
+	private static boolean isRunecraftingTalisman(String name)
+	{
+		return name.endsWith(" talisman") && !name.equals("xeric's talisman");
+	}
+
 	private static boolean isMagicArmor(String name)
 	{
 		return name.contains("robe") || name.contains("wizard") || name.contains("mystic")
 			|| name.contains("infinity") || name.contains("ancestral") || name.contains("ahrim")
 			|| name.contains("virtus") || name.contains("dagon'hai") || name.contains("splitbark")
-			|| name.contains("swampbark") || name.contains("bloodbark") || name.contains("lunar");
+			|| name.contains("swampbark") || name.contains("bloodbark") || name.contains("lunar")
+			|| name.contains("xerician");
 	}
 
 	private static boolean isRangedArmor(String name)
@@ -314,7 +421,7 @@ public enum ItemCategory
 			|| name.contains("gauntlets") || name.contains("torva") || name.contains("bandos")
 			|| name.contains("barrows") || name.contains("verac") || name.contains("dharok")
 			|| name.contains("guthan") || name.contains("torag") || name.contains("justiciar")
-			|| name.contains("obsidian") || name.contains("fighter torso");
+			|| name.contains("obsidian") || name.contains("fighter torso") || name.contains("shayzien");
 	}
 
 	private static boolean isCosmetic(String name)
@@ -324,7 +431,8 @@ public enum ItemCategory
 			|| name.contains("cavalier") || name.contains("headband") || name.contains("mime")
 			|| name.contains("clown") || name.contains("lederhosen") || name.contains("flared trousers")
 			|| name.contains("gnome scarf") || name.contains("holiday") || name.contains("costume")
-			|| name.contains("ornament") || name.contains("ornate") || name.contains("cosmetic");
+			|| name.contains("ornament") || name.contains("ornate") || name.contains("cosmetic")
+			|| name.contains("beekeeper") || name.contains("zombie") || name.contains("camo");
 	}
 
 	private static boolean hasAction(String[] actions, String action)
