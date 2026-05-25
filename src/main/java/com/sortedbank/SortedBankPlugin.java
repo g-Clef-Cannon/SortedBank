@@ -11,10 +11,12 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Client;
+import net.runelite.api.EquipmentInventorySlot;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.widgets.ComponentID;
+import net.runelite.api.widgets.ItemQuantityMode;
 import net.runelite.api.widgets.JavaScriptCallback;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetType;
@@ -50,6 +52,8 @@ public class SortedBankPlugin extends Plugin
 	private static final int GHOST_OPACITY = 150;
 	private static final int HEADER_HEIGHT = 16;
 	private static final int HEADER_TEXT_COLOR = 0xFF981F;
+	private static final int PREFERRED_MELEE_WEAPON_SPEED = 4;
+	private static final int PREFERRED_MELEE_WEAPON_SCORE_BONUS = 1_000_000_000;
 	private static final int TOGGLE_BUTTON_Y = 4;
 	private static final int TOGGLE_BUTTON_WIDTH = 66;
 	private static final int TOGGLE_BUTTON_HEIGHT = 18;
@@ -286,13 +290,20 @@ public class SortedBankPlugin extends Plugin
 
 		for (BankItem item : items)
 		{
-			if (tab == SortedTab.RANGED_BIS && getCategory(item.itemId) == ItemCategory.AMMO)
+			ItemCategory category = getCategory(item.itemId);
+			if (CombatSupplyFilter.matches(category, getItemName(item.itemId), tab.combatStyle()))
+			{
+				bestItemIdsBySlot.computeIfAbsent(-10, ignored -> new HashSet<>()).add(item.itemId);
+				continue;
+			}
+
+			if (tab == SortedTab.RANGED_BIS && category == ItemCategory.AMMO)
 			{
 				bestItemIdsBySlot.computeIfAbsent(-5, ignored -> new HashSet<>()).add(item.itemId);
 				continue;
 			}
 
-			if (tab == SortedTab.MAGE_BIS && getCategory(item.itemId) == ItemCategory.RUNE)
+			if (tab == SortedTab.MAGE_BIS && category == ItemCategory.RUNE)
 			{
 				bestItemIdsBySlot.computeIfAbsent(-2, ignored -> new HashSet<>()).add(item.itemId);
 				continue;
@@ -312,6 +323,10 @@ public class SortedBankPlugin extends Plugin
 
 			ItemEquipmentStats equipment = itemStats.getEquipment();
 			if (tab == SortedTab.RANGED_BIS && addRangedWeapon(item.itemId, equipment, bestScoreBySlot, bestItemIdsBySlot))
+			{
+				continue;
+			}
+			if (!matchesBisWeaponStyle(item.itemId, equipment, tab))
 			{
 				continue;
 			}
@@ -380,6 +395,27 @@ public class SortedBankPlugin extends Plugin
 			bestItemIdsBySlot.computeIfAbsent(slot, ignored -> new HashSet<>()).add(itemId);
 		}
 		return true;
+	}
+
+	private boolean matchesBisWeaponStyle(int itemId, ItemEquipmentStats equipment, SortedTab tab)
+	{
+		if (equipment.getSlot() != EquipmentInventorySlot.WEAPON.getSlotIdx())
+		{
+			return true;
+		}
+
+		ItemCategory category = getCategory(itemId);
+		switch (tab)
+		{
+			case MELEE_BIS:
+				return category == ItemCategory.MELEE_WEAPON;
+			case RANGED_BIS:
+				return category == ItemCategory.RANGED_WEAPON;
+			case MAGE_BIS:
+				return category == ItemCategory.MAGIC_WEAPON;
+			default:
+				return true;
+		}
 	}
 
 	private static int getRangedWeaponBucket(String name)
@@ -987,6 +1023,10 @@ public class SortedBankPlugin extends Plugin
 	private void positionItem(BankItem item, int x, int y)
 	{
 		Widget w = item.widget;
+		if (!item.isGhost)
+		{
+			resetRealItemWidget(w);
+		}
 		w.setOriginalX(x);
 		w.setOriginalY(y);
 		w.setHidden(false);
@@ -1029,6 +1069,10 @@ public class SortedBankPlugin extends Plugin
 			{
 				resetEmptySlot(child);
 			}
+			else if (headerWidgets.contains(child))
+			{
+				resetRealItemWidget(child);
+			}
 		}
 		ghostWidgets.retainAll(activeChildren);
 		headerWidgets.retainAll(activeChildren);
@@ -1053,6 +1097,10 @@ public class SortedBankPlugin extends Plugin
 			else if (headerWidgets.contains(child) && child.getItemId() <= 0)
 			{
 				resetEmptySlot(child);
+			}
+			else if (headerWidgets.contains(child))
+			{
+				resetRealItemWidget(child);
 			}
 
 			WidgetState state = standardLayout.get(child);
@@ -1107,6 +1155,17 @@ public class SortedBankPlugin extends Plugin
 		widget.setHasListener(false);
 		widget.setHidden(false);
 		widget.revalidate();
+	}
+
+	private void resetRealItemWidget(Widget widget)
+	{
+		headerWidgets.remove(widget);
+		ghostWidgets.remove(widget);
+		widget.setType(WidgetType.GRAPHIC);
+		widget.setText("");
+		widget.setOriginalWidth(DEFAULT_ITEM_WIDTH);
+		widget.setOriginalHeight(DEFAULT_ITEM_HEIGHT);
+		widget.setItemQuantityMode(ItemQuantityMode.STACKABLE);
 	}
 
 	private void positionEmptySlots(Widget[] children, List<BankItem> ghostItems,
@@ -1216,35 +1275,12 @@ public class SortedBankPlugin extends Plugin
 				return Comparator.comparingInt(item -> item.itemId);
 			case CATEGORY:
 				return Comparator.<BankItem, Integer>comparing(item -> getCategory(item.itemId).getSortOrder())
-					.thenComparing(item -> getGroupedItemName(item.itemId))
+					.thenComparing(item -> ItemSortKey.categorySortKey(getCategory(item.itemId), getItemName(item.itemId)))
 					.thenComparingInt(item -> -getPotionDose(item.itemId))
 					.thenComparingInt(item -> item.itemId);
 			default:
 				return Comparator.comparing(item -> getItemName(item.itemId));
 		}
-	}
-
-	private String getGroupedItemName(int itemId)
-	{
-		String name = getItemName(itemId);
-		return getCategory(itemId) == ItemCategory.POTION ? stripDoseSuffix(name) : name;
-	}
-
-	private String stripDoseSuffix(String name)
-	{
-		if (name.length() < 3 || name.charAt(name.length() - 1) != ')')
-		{
-			return name;
-		}
-
-		char dose = name.charAt(name.length() - 2);
-		int openParenIndex = name.length() - 3;
-		if (openParenIndex >= 0 && name.charAt(openParenIndex) == '(' && dose >= '1' && dose <= '4')
-		{
-			return name.substring(0, openParenIndex);
-		}
-
-		return name;
 	}
 
 	private int getPotionDose(int itemId)
@@ -1323,6 +1359,7 @@ public class SortedBankPlugin extends Plugin
 		{
 			if (child != null && child.getItemId() > 0)
 			{
+				resetRealItemWidget(child);
 				child.setHidden(false);
 				child.setOpacity(0);
 				child.setDragDeadZone(0);
@@ -1427,6 +1464,21 @@ public class SortedBankPlugin extends Plugin
 			return this == MELEE_BIS || this == RANGED_BIS || this == MAGE_BIS;
 		}
 
+		private CombatStyle combatStyle()
+		{
+			switch (this)
+			{
+				case MELEE_BIS:
+					return CombatStyle.MELEE;
+				case RANGED_BIS:
+					return CombatStyle.RANGED;
+				case MAGE_BIS:
+					return CombatStyle.MAGIC;
+				default:
+					return null;
+			}
+		}
+
 		private int bisScore(ItemEquipmentStats equipment)
 		{
 			int defenceScore = defenceScore(equipment);
@@ -1438,7 +1490,13 @@ public class SortedBankPlugin extends Plugin
 					{
 						return 0;
 					}
-					return (meleeAttack + equipment.getStr() * 2) * 1000 + defenceScore;
+					int meleeOffence = meleeAttack + equipment.getStr() * 2;
+					if (equipment.getSlot() == EquipmentInventorySlot.WEAPON.getSlotIdx()
+						&& equipment.getAspeed() == PREFERRED_MELEE_WEAPON_SPEED)
+					{
+						return PREFERRED_MELEE_WEAPON_SCORE_BONUS + meleeOffence * 1000 + defenceScore;
+					}
+					return meleeOffence * 1000 + defenceScore;
 				case RANGED_BIS:
 					if (equipment.getArange() < 0)
 					{

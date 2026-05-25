@@ -105,10 +105,16 @@ public enum ItemCategory
 			return RUNE;
 		}
 
+		// Tools whose names otherwise look like ammunition or jewelry.
+		if (isSpecificTool(name))
+		{
+			return TOOL;
+		}
+
 		// Fletching components
 		if (name.equals("feather") || name.equals("arrow shaft") || name.equals("headless arrow")
 			|| name.equals("javelin shaft") || name.equals("bow string") || name.equals("bowstring")
-			|| name.endsWith(" arrowtips") || name.endsWith(" bolt tips")
+			|| name.endsWith(" arrowtips") || name.endsWith(" bolt tips") || name.endsWith(" dart tip")
 			|| name.contains("unfinished bolts") || name.endsWith(" bolts (unf)") || name.endsWith("(u)"))
 		{
 			return FLETCHING_COMPONENT;
@@ -129,7 +135,8 @@ public enum ItemCategory
 			|| name.contains("brew(") || name.contains("brew (")
 			|| name.contains("restore(") || name.contains("restore (")
 			|| name.contains("mix(") || name.contains("mix (")
-			|| name.contains("antipoison") || name.contains("antidote")
+			|| name.contains("antipoison") || name.contains("antidote") || name.contains("anti-venom")
+			|| name.startsWith("sanfew serum")
 			|| name.startsWith("weapon poison") || isDosePotion(name))
 		{
 			return POTION;
@@ -138,7 +145,7 @@ public enum ItemCategory
 		// Food
 		if (hasAction(actions, "Eat") || hasAction(actions, "Drink")
 			|| name.startsWith("raw ") && isRawFood(name)
-			|| name.equals("beer") || name.equals("dwarven stout"))
+			|| name.equals("beer") || name.equals("dwarven stout") || isFoodName(name))
 		{
 			return FOOD;
 		}
@@ -156,7 +163,7 @@ public enum ItemCategory
 		// Seeds
 		if (name.endsWith(" seed") || name.endsWith(" seeds")
 			|| name.equals("acorn") || name.contains("sapling")
-			|| name.endsWith(" spore"))
+			|| name.endsWith(" spore") || isFarmingSupply(name))
 		{
 			return SEED;
 		}
@@ -169,7 +176,8 @@ public enum ItemCategory
 
 		// Collectibles and non-coin currencies
 		if (name.equals("mark of grace") || name.equals("frog token")
-			|| name.equals("ancient shard") || name.equals("lizardman fang"))
+			|| name.equals("ancient shard") || name.equals("lizardman fang")
+			|| name.equals("molch pearl"))
 		{
 			return COLLECTIBLE;
 		}
@@ -191,7 +199,8 @@ public enum ItemCategory
 		if (name.equals("vial") || name.equals("vial of water") || name.equals("bucket")
 			|| name.equals("bucket of water") || name.equals("jug") || name.equals("jug of water")
 			|| name.equals("pot") || name.equals("bowl") || name.equals("empty sack")
-			|| name.contains("jug pack") || name.equals("beer glass"))
+			|| name.equals("basket") || name.equals("sack pack")
+			|| name.contains("jug pack") || name.equals("beer glass") || name.equals("empty fishbowl"))
 		{
 			return CONTAINER;
 		}
@@ -200,7 +209,10 @@ public enum ItemCategory
 		if (name.endsWith(" leather") || name.equals("leather") || name.endsWith(" plank")
 			|| name.endsWith(" planks") || name.endsWith(" cloth") || name.equals("wool")
 			|| name.endsWith(" nails") || name.endsWith("dragonhide") || name.equals("thread")
-			|| name.equals("papyrus") || name.contains("fabric") || name.endsWith(" chunk"))
+			|| name.equals("papyrus") || name.contains("fabric") || name.endsWith(" chunk")
+			|| name.equals("ball of wool") || name.equals("flax") || name.equals("seaweed")
+			|| name.equals("soda ash") || name.equals("bucket of sand") || name.equals("steel studs")
+			|| name.equals("molten glass"))
 		{
 			return PROCESSED_MATERIAL;
 		}
@@ -210,7 +222,7 @@ public enum ItemCategory
 			&& (name.contains("sapphire") || name.contains("emerald") || name.contains("ruby")
 				|| name.contains("diamond") || name.contains("dragonstone") || name.contains("onyx")
 				|| name.contains("zenyte") || name.contains("opal") || name.contains("jade")
-				|| name.contains("topaz")))
+				|| name.contains("topaz") || name.endsWith(" pearl")))
 		{
 			return GEM;
 		}
@@ -220,7 +232,8 @@ public enum ItemCategory
 			|| name.contains("scroll of redirection") || name.equals("games necklace")
 			|| name.contains("ring of dueling") || name.contains("amulet of glory")
 			|| name.contains("skills necklace") || name.contains("combat bracelet")
-			|| name.contains("ring of wealth") || name.equals("xeric's talisman"))
+			|| name.contains("ring of wealth") || name.equals("xeric's talisman")
+			|| name.equals("kharedst's memoirs"))
 		{
 			return TELEPORT;
 		}
@@ -317,6 +330,19 @@ public enum ItemCategory
 			|| name.contains("maul") || name.contains("warhammer") || name.contains("defender");
 	}
 
+	private static boolean isSpecificTool(String name)
+	{
+		return name.endsWith(" mould")
+			|| name.equals("bait pack")
+			|| name.equals("fish offcuts")
+			|| name.equals("glassblowing pipe")
+			|| name.equals("lobster pot")
+			|| name.equals("lockpick")
+			|| name.contains("torch")
+			|| name.contains("candle lantern")
+			|| name.contains("oil lamp");
+	}
+
 	private static boolean isHerb(String name)
 	{
 		return name.startsWith("grimy ")
@@ -360,6 +386,29 @@ public enum ItemCategory
 			|| name.contains("tuna") || name.contains("lobster") || name.contains("bass")
 			|| name.contains("swordfish") || name.contains("monkfish") || name.contains("shark")
 			|| name.contains("karambwan") || name.contains("anglerfish");
+	}
+
+	private static boolean isFoodName(String name)
+	{
+		return name.equals("burnt fish") || name.startsWith("burnt ") && isRawFood(name)
+			|| name.equals("cooking apple")
+			|| name.equals("redberries")
+			|| name.equals("golovanova fruit top")
+			|| isBasketedFruit(name);
+	}
+
+	private static boolean isBasketedFruit(String name)
+	{
+		return name.endsWith(")")
+			&& (name.startsWith("apples(") || name.startsWith("bananas(") || name.startsWith("strawberries("));
+	}
+
+	private static boolean isFarmingSupply(String name)
+	{
+		return name.equals("compost")
+			|| name.equals("supercompost")
+			|| name.equals("ultracompost")
+			|| name.equals("saltpetre");
 	}
 
 	private static boolean isDosePotion(String name)
